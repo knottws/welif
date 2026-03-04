@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>welifGiea - Social Membership System</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        /* Custom scrollbar for better aesthetics */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; 
+        }
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-slate-900 antialiased h-screen overflow-hidden">
+
+    <div id="root" class="h-full w-full"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+        
+        // --- ICON COMPONENT WRAPPER ---
+        // Helper to use Lucide icons in React without individual imports
+        const Icon = ({ name, size = 20, className = "" }) => {
+            useEffect(() => {
+                lucide.createIcons();
+            }, [name]);
+            return <i data-lucide={name} width={size} height={size} className={className}></i>;
+        };
+
+        const App = () => {
+            // --- STATE MANAGEMENT ---
+            const [currentUser, setCurrentUser] = useState(null); 
+            const [activeTab, setActiveTab] = useState('dashboard');
+            const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+            const [showHostingGuide, setShowHostingGuide] = useState(false);
+            
+            // Database State (Simulated with LocalStorage)
+            const [members, setMembers] = useState([]);
+            const [financeRecords, setFinanceRecords] = useState([]);
+            const [settings, setSettings] = useState({ contributionPerPerson: 50, lateThresholdDays: 7 }); 
+            
+            // Form States
+            const [loginEmail, setLoginEmail] = useState('');
+            const [loginRole, setLoginRole] = useState('member');
+            const [showMemberModal, setShowMemberModal] = useState(false);
+            const [showFinanceModal, setShowFinanceModal] = useState(false);
+            const [searchTerm, setSearchTerm] = useState('');
+            
+            // New Member Form
+            const [newMember, setNewMember] = useState({
+                mainName: '',
+                email: '',
+                phone: '',
+                familyMembers: [{ name: '', relation: 'Self' }],
+            });
+
+            // New Finance Record Form
+            const [newFinance, setNewFinance] = useState({
+                memberId: '',
+                month: '',
+                amountRequired: '',
+                amountPaid: '',
+                paymentDate: '',
+                bankStatement: null
+            });
+
+            // --- INITIALIZATION ---
+            useEffect(() => {
+                const storedMembers = localStorage.getItem('welifGiea_members');
+                const storedFinance = localStorage.getItem('welifGiea_finance');
+                const storedSettings = localStorage.getItem('welifGiea_settings');
+                
+                if (storedMembers) setMembers(JSON.parse(storedMembers));
+                else {
+                    // Seed dummy data
+                    const dummyMembers = [
+                        { id: 1, mainName: 'John Doe', email: 'john@test.com', role: 'admin', phone: '123456', familyMembers: [{name: 'John Doe', relation: 'Self'}, {name: 'Jane Doe', relation: 'Spouse'}] },
+                        { id: 2, mainName: 'Alice Smith', email: 'alice@test.com', role: 'member', phone: '789012', familyMembers: [{name: 'Alice Smith', relation: 'Self'}, {name: 'Bob Smith', relation: 'Son'}] }
+                    ];
+                    setMembers(dummyMembers);
+                    localStorage.setItem('welifGiea_members', JSON.stringify(dummyMembers));
+                }
+
+                if (storedFinance) setFinanceRecords(JSON.parse(storedFinance));
+                if (storedSettings) setSettings(JSON.parse(storedSettings));
+            }, []);
+
+            // Save to LocalStorage on change
+            useEffect(() => { localStorage.setItem('welifGiea_members', JSON.stringify(members)); }, [members]);
+            useEffect(() => { localStorage.setItem('welifGiea_finance', JSON.stringify(financeRecords)); }, [financeRecords]);
+            useEffect(() => { localStorage.setItem('welifGiea_settings', JSON.stringify(settings)); }, [settings]);
+
+            // Re-render icons when DOM changes
+            useEffect(() => {
+                lucide.createIcons();
+            });
+
+            // --- COMPUTED DATA & LOGIC ---
+            const processedFinance = useMemo(() => {
+                return financeRecords.map(record => {
+                    let status = 'Not Paid';
+                    let statusColor = 'bg-red-100 text-red-800';
+                    
+                    if (record.paymentDate) {
+                        const paymentDate = new Date(record.paymentDate);
+                        const today = new Date();
+                        const diffTime = Math.abs(today - paymentDate);
+                        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+                        
+                        if (diffDays > settings.lateThresholdDays) {
+                            status = 'Late';
+                            statusColor = 'bg-orange-100 text-orange-800';
+                        } else {
+                            status = 'Paid On Time';
+                            statusColor = 'bg-green-100 text-green-800';
+                        }
+                    }
+                    
+                    return { ...record, status, statusColor };
+                });
+            }, [financeRecords, settings.lateThresholdDays]);
+
+            const totalIncome = processedFinance.reduce((acc, curr) => acc + (curr.amountPaid ? Number(curr.amountPaid) : 0), 0);
+            const totalRequired = processedFinance.reduce((acc, curr) => acc + (curr.amountRequired ? Number(curr.amountRequired) : 0), 0);
+            const balance = totalIncome - totalRequired; 
+
+            const filteredMembers = useMemo(() => {
+                return members.filter(m => 
+                    m.mainName.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                    m.familyMembers.some(f => f.name.toLowerCase().includes(searchTerm.toLowerCase()))
+                );
+            }, [members, searchTerm]);
+
+            // --- HANDLERS ---
+            const handleLogin = (e) => {
+                e.preventDefault();
+                const user = members.find(m => m.email === loginEmail) || { name: 'Guest', email: loginEmail, role: loginRole };
+                setCurrentUser(user);
+                setActiveTab('dashboard');
+                setIsMobileMenuOpen(false);
+            };
+
+            const handleAddMember = (e) => {
+                e.preventDefault();
+                const memberData = {
+                    id: Date.now(),
+                    ...newMember,
+                    role: 'member',
+                    joinedDate: new Date().toISOString()
+                };
+                setMembers([...members, memberData]);
+                setShowMemberModal(false);
+                setNewMember({ mainName: '', email: '', phone: '', familyMembers: [{ name: '', relation: 'Self' }] });
+            };
+
+            const handleDeleteMember = (id) => {
+                if(window.confirm("Delete this member and all linked data?")) {
+                    setMembers(members.filter(m => m.id !== id));
+                    setFinanceRecords(financeRecords.filter(f => f.memberId !== id));
+                }
+            };
+
+            const handleAddFinance = (e) => {
+                e.preventDefault();
+                const finData = {
+                    id: Date.now(),
+                    ...newFinance,
+                    amountRequired: Number(newFinance.amountRequired),
+                    amountPaid: Number(newFinance.amountPaid),
+                };
+                setFinanceRecords([finData, ...financeRecords]);
+                setShowFinanceModal(false);
+                setNewFinance({ memberId: '', month: '', amountRequired: '', amountPaid: '', paymentDate: '', bankStatement: null });
+            };
+
+            const handleDeleteFinance = (id) => {
+                if(window.confirm("Delete this financial record?")) {
+                    setFinanceRecords(financeRecords.filter(f => f.id !== id));
+                }
+            };
+
+            // --- VIEWS ---
+            if (!currentUser) {
+                return (
+                    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+                        <div className="bg-white p-8 rounded-xl shadow-lg max-w-md w-full animate-fade-in-up">
+                            <div className="text-center mb-8">
+                                <h1 className="text-3xl font-bold text-blue-600 flex items-center justify-center gap-2">
+                                    <Icon name="users" className="text-blue-600" /> welifGiea
+                                </h1>
+                                <p className="text-gray-500 mt-2">Social Membership System</p>
+                            </div>
+                            
+                            <form onSubmit={handleLogin} className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+                                    <input 
+                                        type="email" 
+                                        required
+                                        className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                                        placeholder="e.g. member@welifGiea.com"
+                                        value={loginEmail}
+                                        onChange={(e) => setLoginEmail(e.target.value)}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Select Role (Simulation)</label>
+                                    <select 
+                                        className="w-full p-2 border rounded-lg bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                                        value={loginRole}
+                                        onChange={(e) => setLoginRole(e.target.value)}
+                                    >
+                                        <option value="member">Member</option>
+                                        <option value="finance">Finance Collector</option>
+                                        <option value="admin">Administrator</option>
+                                    </select>
+                                </div>
+                                <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 transition shadow-md hover:shadow-lg transform active:scale-95">
+                                    Sign In
+                                </button>
+                            </form>
+
+                            <div className="mt-8 pt-6 border-t">
+                                <button 
+                                    onClick={() => setShowHostingGuide(true)}
+                                    className="w-full text-sm text-gray-500 hover:text-blue-600 flex items-center justify-center gap-2 transition-colors"
+                                >
+                                    <Icon name="settings" size={16} /> How to Host This for Free
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Hosting Guide Modal */}
+                        {showHostingGuide && (
+                            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+                                <div className="bg-white rounded-lg w-full max-w-lg p-6 relative shadow-2xl animate-scale-in">
+                                    <button onClick={() => setShowHostingGuide(false)} className="absolute top-4 right-4 text-gray-500 hover:text-gray-800"><Icon name="x" /></button>
+                                    <h3 className="text-xl font-bold mb-4 text-gray-800">Free Hosting Guide</h3>
+                                    <div className="space-y-4 text-sm text-gray-700">
+                                        <p><strong className="text-blue-600">Step 1: Save the Code</strong><br/>Copy the entire code of this application and save it as <code>index.html</code> on your computer.</p>
+                                        <p><strong className="text-blue-600">Step 2: Use Netlify Drop</strong><br/>1. Go to <a href="https://app.netlify.com/drop" target="_blank" className="text-blue-600 underline hover:text-blue-800">Netlify Drop</a>.<br/>2. Drag and drop the folder containing your <code>index.html</code> file into the browser window.<br/>3. Netlify will instantly create a live URL.</p>
+                                        <div className="bg-yellow-50 p-3 rounded border border-yellow-200 text-xs text-yellow-800">
+                                            <strong>Note:</strong> This app uses LocalStorage. Data is saved on the specific device/browser. For a real multi-user database accessible by everyone on different phones, you would typically connect this to a backend like Airtable or Firebase.
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                );
+            }
+
+            return (
+                <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row">
+                    {/* Sidebar */}
+                    <aside className={`bg-slate-900 text-white w-full md:w-64 flex-shrink-0 fixed md:relative z-30 h-full transition-transform duration-300 ease-in-out ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}>
+                        <div className="p-6 border-b border-slate-800 flex justify-between items-center">
+                            <h1 className="text-2xl font-bold text-blue-400 flex items-center gap-2">
+                                <Icon name="users" /> welifGiea
+                            </h1>
+                            <button onClick={() => setIsMobileMenuOpen(false)} className="md:hidden text-gray-400 hover:text-white"><Icon name="x" /></button>
+                        </div>
+                        <div className="p-4 border-b border-slate-800 text-xs text-slate-400 flex items-center gap-2">
+                            <Icon name="shield" size={14} />
+                            <span className="capitalize">{currentUser.role} Access</span>
+                        </div>
+                        <nav className="p-4 space-y-2">
+                            <NavButton icon={<Icon name="file-text" />} label="Dashboard" active={activeTab === 'dashboard'} onClick={() => {setActiveTab('dashboard'); setIsMobileMenuOpen(false);}} />
+                            {(currentUser.role === 'admin' || currentUser.role === 'finance') && (
+                                <NavButton icon={<Icon name="users" />} label="Members" active={activeTab === 'members'} onClick={() => {setActiveTab('members'); setIsMobileMenuOpen(false);}} />
+                            )}
+                            <NavButton icon={<Icon name="dollar-sign" />} label="Finance Report" active={activeTab === 'finance'} onClick={() => {setActiveTab('finance'); setIsMobileMenuOpen(false);}} />
+                            {(currentUser.role === 'admin' || currentUser.role === 'finance') && (
+                                <NavButton icon={<Icon name="credit-card" />} label="Record Payment" active={activeTab === 'record'} onClick={() => {setActiveTab('record'); setIsMobileMenuOpen(false);}} />
+                            )}
+                            {currentUser.role === 'admin' && (
+                                <NavButton icon={<Icon name="settings" />} label="Settings" active={activeTab === 'settings'} onClick={() => {setActiveTab('settings'); setIsMobileMenuOpen(false);}} />
+                            )}
+                        </nav>
+                        <div className="p-4 mt-auto border-t border-slate-800 absolute bottom-0 w-full">
+                            <button onClick={() => setCurrentUser(null)} className="flex items-center gap-2 text-slate-400 hover:text-white transition w-full hover:bg-slate-800 p-2 rounded-lg">
+                                <Icon name="log-out" size={18} /> Logout
+                            </button>
+                        </div>
+                    </aside>
+
+                    {/* Main Content */}
+                    <main className="flex-1 overflow-y-auto p-4 md:p-8 w-full">
+                        {/* Mobile Header */}
+                        <div className="md:hidden flex justify-between items-center mb-6">
+                            <h1 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                                <Icon name="users" className="text-blue-600" /> welifGiea
+                            </h1>
+                            <button onClick={() => setIsMobileMenuOpen(true)} className="text-gray-600 p-2 bg-white rounded-md shadow-sm"><Icon name="menu" /></button>
+                        </div>
+                        
+                        {/* DASHBOARD */}
+                        {activeTab === 'dashboard' && (
+                            <div className="space-y-6 animate-fade-in">
+                                <h2 className="text-2xl font-bold text-gray-800">Overview</h2>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                    <StatCard title="Total Members" value={members.length} icon={<Icon name="users" className="text-blue-500"/>} />
+                                    <StatCard title="Total Collected" value={`$${totalIncome.toLocaleString()}`} icon={<Icon name="dollar-sign" className="text-green-500"/>} />
+                                    <StatCard title="Outstanding Balance" value={`$${Math.abs(balance).toLocaleString()}`} icon={<Icon name="alert-circle" className={balance < 0 ? "text-red-500" : "text-green-500"}/>} />
+                                </div>
+                                
+                                <div className="bg-white rounded-lg shadow p-6">
+                                    <h3 className="font-bold text-lg mb-4 text-gray-800">Recent Financial Activity</h3>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left text-sm">
+                                            <thead className="bg-gray-50 text-gray-500">
+                                                <tr>
+                                                    <th className="p-3 rounded-tl-lg">Member</th>
+                                                    <th className="p-3">Month</th>
+                                                    <th className="p-3">Status</th>
+                                                    <th className="p-3 text-right rounded-tr-lg">Amount</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {processedFinance.slice(0, 5).map(t => {
+                                                    const member = members.find(m => m.id == t.memberId);
+                                                    return (
+                                                        <tr key={t.id} className="border-b last:border-0 hover:bg-gray-50 transition-colors">
+                                                            <td className="p-3 font-medium text-gray-900">{member ? member.mainName : 'Unknown'}</td>
+                                                            <td className="p-3 text-gray-500">{t.month}</td>
+                                                            <td className="p-3">
+                                                                <span className={`px-2 py-1 rounded-full text-xs font-bold ${t.statusColor}`}>{t.status}</span>
+                                                            </td>
+                                                            <td className="p-3 text-right font-bold text-gray-700">${t.amountPaid}</td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                                {processedFinance.length === 0 && <tr><td colSpan="4" className="p-4 text-center text-gray-400">No transactions yet</td></tr>}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* MEMBERS */}
+                        {activeTab === 'members' && (
+                            <div className="space-y-6 animate-fade-in">
+                                <div className="flex justify-between items-center">
+                                    <h2 className="text-2xl font-bold text-gray-800">Member Registration</h2>
+                                    <button onClick={() => setShowMemberModal(true)} className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition shadow-md">
+                                        <Icon name="plus" size={18} /> Add Family
+                                    </button>
+                                </div>
+
+                                <div className="bg-white rounded-lg shadow overflow-hidden">
+                                    <div className="p-4 border-b flex gap-4 bg-gray-50">
+                                        <div className="relative flex-1">
+                                            <Icon name="search" className="absolute left-3 top-2.5 text-gray-400" size={18} />
+                                            <input 
+                                                type="text" 
+                                                placeholder="Search member or family name..." 
+                                                className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-shadow"
+                                                value={searchTerm}
+                                                onChange={(e) => setSearchTerm(e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left text-sm">
+                                            <thead className="bg-gray-50 text-gray-500 uppercase tracking-wider text-xs">
+                                                <tr>
+                                                    <th className="p-4">Main Member</th>
+                                                    <th className="p-4">Family Members</th>
+                                                    <th className="p-4">Total Count</th>
+                                                    <th className="p-4">Contact</th>
+                                                    <th className="p-4 text-right">Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {filteredMembers.map(m => (
+                                                    <tr key={m.id} className="border-b hover:bg-gray-50 transition-colors">
+                                                        <td className="p-4 font-medium text-gray-900">
+                                                            {m.mainName}
+                                                            <div className="text-xs text-gray-400 font-normal">{m.email}</div>
+                                                        </td>
+                                                        <td className="p-4 text-gray-500">
+                                                            <div className="flex flex-wrap gap-1">
+                                                                {m.familyMembers.map((f, i) => (
+                                                                    <span key={i} className="inline-block bg-gray-100 rounded-full px-2 py-1 text-xs border border-gray-200">
+                                                                        {f.name} <span className="text-gray-400">({f.relation})</span>
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        </td>
+                                                        <td className="p-4 font-bold text-blue-600">{m.familyMembers.length}</td>
+                                                        <td className="p-4 text-gray-500">{m.phone}</td>
+                                                        <td className="p-4 text-right">
+                                                            {currentUser.role === 'admin' && (
+                                                                <button onClick={() => handleDeleteMember(m.id)} className="text-red-500 hover:text-red-700 p-2 hover:bg-red-50 rounded-full transition-colors">
+                                                                    <Icon name="trash-2" size={18} />
+                                                                </button>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* FINANCE REPORT */}
+                        {activeTab === 'finance' && (
+                            <div className="space-y-6 animate-fade-in">
+                                <div className="flex justify-between items-center">
+                                    <h2 className="text-2xl font-bold text-gray-800">Financial Report</h2>
+                                    <button className="text-green-600 border border-green-600 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-green-50 transition-colors">
+                                        <Icon name="download" size={18} /> Export CSV
+                                    </button>
+                                </div>
+
+                                <div className="bg-white rounded-lg shadow overflow-hidden">
+                                    <div className="p-4 bg-gray-50 border-b flex gap-4 items-center">
+                                        <span className="text-sm font-bold text-gray-600">Filter Status:</span>
+                                        <select className="border rounded px-2 py-1 text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+                                            <option>All Records</option>
+                                            <option>Not Paid (Red)</option>
+                                            <option>Late (Orange)</option>
+                                            <option>Paid On Time (Green)</option>
+                                        </select>
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left text-sm">
+                                            <thead className="bg-slate-800 text-white">
+                                                <tr>
+                                                    <th className="p-4">Member</th>
+                                                    <th className="p-4">Month</th>
+                                                    <th className="p-4">Required</th>
+                                                    <th className="p-4">Paid</th>
+                                                    <th className="p-4">Date Paid</th>
+                                                    <th className="p-4">Status Logic</th>
+                                                    <th className="p-4 text-right">Action</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {processedFinance.map(t => {
+                                                    const member = members.find(m => m.id == t.memberId);
+                                                    return (
+                                                        <tr key={t.id} className={`border-b ${t.status === 'Not Paid' ? 'bg-red-50' : ''} hover:bg-gray-50`}>
+                                                            <td className="p-4 font-medium text-gray-900">{member ? member.mainName : 'Unknown'}</td>
+                                                            <td className="p-4 text-gray-600">{t.month}</td>
+                                                            <td className="p-4 text-gray-500">${t.amountRequired}</td>
+                                                            <td className="p-4 font-bold text-green-600">${t.amountPaid}</td>
+                                                            <td className="p-4 text-gray-500">{t.paymentDate || '-'}</td>
+                                                            <td className="p-4">
+                                                                <span className={`px-2 py-1 rounded-full text-xs font-bold ${t.statusColor}`}>
+                                                                    {t.status}
+                                                                </span>
+                                                            </td>
+                                                            <td className="p-4 text-right">
+                                                                {currentUser.role === 'admin' && (
+                                                                    <button onClick={() => handleDeleteFinance(t.id)} className="text-gray-400 hover:text-red-500 p-1 hover:bg-red-50 rounded transition-colors">
+                                                                        <Icon name="trash-2" size={16} />
+                                                                    </button>
+                                                                )}
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* RECORD PAYMENT */}
+                        {activeTab === 'record' && (
+                            <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
+                                <h2 className="text-2xl font-bold text-gray-800">Record Contribution</h2>
+                                <div className="bg-white rounded-lg shadow p-6">
+                                    <form onSubmit={handleAddFinance} className="space-y-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700">Select Member</label>
+                                            <select 
+                                                required
+                                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                                value={newFinance.memberId}
+                                                onChange={e => setNewFinance({...newFinance, memberId: e.target.value})}
+                                            >
+                                                <option value="">-- Select Member --</option>
+                                                {members.map(m => (
+                                                    <option key={m.id} value={m.id}>{m.mainName} ({m.familyMembers.length} members)</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700">Month/Year</label>
+                                                <input required type="text" placeholder="e.g. October 2023" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                                    value={newFinance.month} onChange={e => setNewFinance({...newFinance, month: e.target.value})}/>
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700">Payment Date</label>
+                                                <input type="date" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                                    value={newFinance.paymentDate} onChange={e => setNewFinance({...newFinance, paymentDate: e.target.value})}/>
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700">Amount Required ($)</label>
+                                                <input required type="number" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                                    value={newFinance.amountRequired} onChange={e => setNewFinance({...newFinance, amountRequired: e.target.value})}/>
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700">Amount Paid ($)</label>
+                                                <input required type="number" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                                    value={newFinance.amountPaid} onChange={e => setNewFinance({...newFinance, amountPaid: e.target.value})}/>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700">Bank Statement (Proof)</label>
+                                            <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md hover:bg-gray-50 transition-colors cursor-pointer">
+                                                <div className="space-y-1 text-center">
+                                                    <Icon name="upload" className="mx-auto h-12 w-12 text-gray-400" />
+                                                    <div className="flex text-sm text-gray-600 justify-center">
+                                                        <label className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500">
+                                                            <span>Upload a file</span>
+                                                            <input type="file" className="sr-only" onChange={(e) => setNewFinance({...newFinance, bankStatement: e.target.files[0]?.name})} />
+                                                        </label>
+                                                    </div>
+                                                    <p className="text-xs text-gray-500">{newFinance.bankStatement || "PNG, JPG, PDF up to 10MB"}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="pt-4">
+                                            <button type="submit" className="w-full bg-green-600 text-white py-3 rounded-lg font-bold hover:bg-green-700 transition shadow-md hover:shadow-lg transform active:scale-95">Save Transaction</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* SETTINGS */}
+                        {activeTab === 'settings' && (
+                            <div className="max-w-md bg-white p-6 rounded-lg shadow animate-fade-in">
+                                <h2 className="text-xl font-bold mb-4 text-gray-800">System Settings</h2>
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Contribution Per Person</label>
+                                    <div className="flex gap-2">
+                                        <span className="inline-flex items-center px-3 text-sm text-gray-900 bg-gray-200 border border-r-0 border-gray-300 rounded-l-md">$</span>
+                                        <input type="number" value={settings.contributionPerPerson} onChange={(e) => setSettings({...settings, contributionPerPerson: Number(e.target.value)})} className="rounded-none rounded-r-lg bg-gray-50 border border-gray-300 text-gray-900 focus:ring-blue-500 focus:border-blue-500 block flex-1 min-w-0 w-full text-sm p-2.5 outline-none" />
+                                    </div>
+                                </div>
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Late Payment Threshold (Days)</label>
+                                    <input type="number" value={settings.lateThresholdDays} onChange={(e) => setSettings({...settings, lateThresholdDays: Number(e.target.value)})} className="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none" />
+                                    <p className="text-xs text-gray-500 mt-1">If paid after this many days, status becomes "Late" (Orange).</p>
+                                </div>
+                                <button className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition shadow-sm">Save Settings</button>
+                            </div>
+                        )}
+
+                    </main>
+
+                    {/* MODALS */}
+                    {showMemberModal && (
+                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+                            <div className="bg-white rounded-lg w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl animate-scale-in">
+                                <div className="p-4 border-b flex justify-between items-center sticky top-0 bg-white z-10">
+                                    <h3 className="font-bold text-lg text-gray-800">Register New Family</h3>
+                                    <button onClick={() => setShowMemberModal(false)} className="text-gray-500 hover:text-gray-700"><Icon name="x-circle"/></button>
+                                </div>
+                                <form onSubmit={handleAddMember} className="p-4 space-y-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700">Main Member Name</label>
+                                        <input required type="text" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 focus:ring-blue-500 focus:border-blue-500 outline-none" value={newMember.mainName} onChange={e => setNewMember({...newMember, mainName: e.target.value})} />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700">Email (for Login)</label>
+                                        <input required type="email" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 focus:ring-blue-500 focus:border-blue-500 outline-none" value={newMember.email} onChange={e => setNewMember({...newMember, email: e.target.value})} />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700">Phone Number</label>
+                                        <input type="tel" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 focus:ring-blue-500 focus:border-blue-500 outline-none" value={newMember.phone} onChange={e => setNewMember({...newMember, phone: e.target.value})} />
+                                    </div>
+                                    
+                                    <div className="border-t pt-4">
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">Family Members</label>
+                                        {newMember.familyMembers.map((fm, index) => (
+                                            <div key={index} className="flex gap-2 mb-2 items-start">
+                                                <input placeholder="Name" className="flex-1 border rounded p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" value={fm.name} onChange={e => { const updated = [...newMember.familyMembers]; updated[index].name = e.target.value; setNewMember({...newMember, familyMembers: updated}); }} />
+                                                <select className="border rounded p-2 text-sm w-32 bg-white focus:ring-2 focus:ring-blue-500 outline-none" value={fm.relation} onChange={e => { const updated = [...newMember.familyMembers]; updated[index].relation = e.target.value; setNewMember({...newMember, familyMembers: updated}); }}>
+                                                    <option value="Self">Self</option>
+                                                    <option value="Spouse">Spouse</option>
+                                                    <option value="Son">Son</option>
+                                                    <option value="Daughter">Daughter</option>
+                                                    <option value="Father">Father</option>
+                                                    <option value="Mother">Mother</option>
+                                                    <option value="Brother">Brother</option>
+                                                    <option value="Sister">Sister</option>
+                                                    <option value="Other">Other</option>
+                                                </select>
+                                                {index > 0 && <button type="button" onClick={() => { const updated = newMember.familyMembers.filter((_, i) => i !== index); setNewMember({...newMember, familyMembers: updated}); }} className="text-red-500 hover:bg-red-50 p-1 rounded transition-colors"><Icon name="trash-2" size={18}/></button>}
+                                            </div>
+                                        ))}
+                                        <button type="button" onClick={() => setNewMember({...newMember, familyMembers: [...newMember.familyMembers, {name: '', relation: 'Other'}]})} className="text-sm text-blue-600 font-medium flex items-center gap-1 hover:text-blue-800 mt-2"><Icon name="plus" size={14}/> Add Family Member</button>
+                                    </div>
+
+                                    <div className="pt-4 flex justify-end gap-2 sticky bottom-0 bg-white border-t -mx-4 -mb-4 p-4">
+                                        <button type="button" onClick={() => setShowMemberModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded transition-colors">Cancel</button>
+                                        <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors shadow-md">Save Member</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // Helper Components
+        const NavButton = ({ icon, label, active, onClick }) => (
+            <button onClick={onClick} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ${active ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
+                {icon}
+                <span className="font-medium">{label}</span>
+            </button>
+        );
+
+        const StatCard = ({ title, value, icon }) => (
+            <div className="bg-white p-6 rounded-lg shadow hover:shadow-md transition-shadow flex items-center justify-between">
+                <div>
+                    <p className="text-gray-500 text-sm font-medium">{title}</p>
+                    <p className="text-2xl font-bold text-gray-800 mt-1">{value}</p>
+                </div>
+                <div className="p-3 bg-gray-50 rounded-full">{icon}</div>
+            </div>
+        );
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+    
+    <style>
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.3s ease-out forwards;
+        }
+        @keyframes scaleIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        .animate-scale-in {
+            animation: scaleIn 0.2s ease-out forwards;
+        }
+    </style>
+</body>
+</html>
+
